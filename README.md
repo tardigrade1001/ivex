@@ -13,7 +13,7 @@ The Keysight B2900-series SMUs save data in their own `.QIVD` binary format by d
 
 The usual workaround is to physically go back to the instrument PC, open each file one at a time in B291x Utility, and use its "Save As CSV" command. This becomes painful when the instrument PC is busy, in another room, or running a Windows version you would rather not touch.
 
-This script reads those binary files directly. Users can now convert anywhere: their own laptop, a shared drive, a backup of old measurements, with no need to return to the instrument.
+This script reads those binary files directly, on any PC. Point it at your own laptop, a shared drive, or an old archive of measurements and it converts the whole tree in one pass.
 
 ## Background
 
