@@ -1,6 +1,6 @@
 # ivex
 
-Convert proprietary Keysight B2900-series Source/Measure Unit `.QIVD` binary files to plain CSV (and quick-look PNG plots) on any PC, without the original B291x Utility Software.
+Convert proprietary Keysight B2900-series Source/Measure Unit `.QIVD` binary files to plain CSV (and quick-look PNG plots) on any PC, using Python alone.
 
 | Single sweep (`.QIVD`) | Overlay of three sweeps |
 |:---:|:---:|
@@ -9,55 +9,11 @@ Convert proprietary Keysight B2900-series Source/Measure Unit `.QIVD` binary fil
 
 ## The problem this solves
 
-The Keysight B2900-series SMUs save data in their own `.QIVD` binary format by default. The instrument software, **B291x Utility Software** ("Quick I-V"), offers a checkbox to also export a plain CSV file at save time. If that checkbox stays unticked, the resulting `.QIVD` files cannot be opened by anything else on your laptop.
+The Keysight B2900-series SMUs save data in their own `.QIVD` binary format by default. The instrument software, **B291x Utility Software** ("Quick I-V"), offers a checkbox to also export a plain CSV file at save time. If that checkbox stays unticked, the resulting `.QIVD` files open only in that program.
 
-The usual workaround is to physically go back to the instrument PC, open each file one at a time in B291x Utility, and use its "Save As CSV" command. This becomes painful when the instrument PC is busy, in another room, or running a Windows version you would rather not touch.
+The usual workaround is to physically go back to the instrument PC, open each file one at a time in B291x Utility, and use its "Save As CSV" command. This becomes painful when the instrument PC is busy, in another room, or running an awkward Windows version.
 
 This script reads those binary files directly, on any PC. Point it at your own laptop, a shared drive, or an old archive of measurements and it converts the whole tree in one pass.
-
-## Background
-
-The instrument this targets:
-
-- **Keysight B2900-series Precision Source/Measure Unit** (B2901, B2902, B2911, B2912 and equivalents). Writes `.QIVD` files. Controlled by *B291x Utility Software*.
-
-About the original software:
-
-- Name on disk: **QuickIV** (B291x Utility Software). Product name in version info is just "Quick IV".
-- Version verified against: **4.2.2045.2760** (installer build 2017-07-27, signed by Keysight Technologies; in-program copyright 2011-2016).
-- Architecture: 32-bit Windows **.NET / WPF** application. The two libraries that own measurement persistence are `SamplingLib.dll` (sampling mode) and `SweepLib.dll` (sweep mode). The file-format magic and the deserialization error strings live in `TestMain.dll`. Plotting inside the program is done with OxyPlot. The installer is a 76 MB InstallShield wrapper (`QuickIV-4-2-2045-2760.EXE`).
-- Hard dependency: **Keysight IO Libraries Suite** (provides the VISA drivers; the installer for this is a separate ~260 MB package). Without it, QuickIV cannot talk to the instrument.
-- Distribution: not available as a public download. The only ways to get the installer are through a Keysight support request or from another lab that already has it.
-
-Two file extensions exist:
-
-- `.qivd` is the **Quick IV Data File** (measurement results). This is what ivex converts.
-- `.qivm` is the **Quick IV Setting File** (a saved test recipe: source mode, ranges, compliance, sample count, timing). It does not contain measurement data and is out of scope for ivex.
-
-What `.qivm` files look like internally (from a spot-check of 13 files in the test archive):
-
-- Same magic header as `.qivd`, same overall TLV structure.
-- A fixed file size of 9364 bytes across every `.qivm` sampled. The schema is rigidly fixed: the same parameter slots are present in every file, with values written in place.
-- The tag-7 "data" records inside the column blocks have a length of zero (no captured samples).
-- Plaintext fields readable directly: VISA address and serial of the configured instrument, the test mode (`Sampling`, `Sweepd`, or `Source & Sampling`), and the channel names registered for the test.
-- The acquisition parameters themselves (source level, compliance, ranges, sample count, timing) are stored as a fixed-index parameter table with no field names embedded in the binary. The index-to-label mapping lives inside `TestMain.dll`'s deserialization code. Extracting it would require decompiling that DLL with a .NET decompiler such as ILSpy or dnSpy. That work has not been done here.
-
-The `.QIVD` format is not publicly documented. The only built-in way to get data out is the program's "Save As CSV" command, one file at a time.
-
-This tool reverse-engineers the format and converts a whole tree of files in one pass.
-
-## What it does
-
-Pointed at a folder, `ivex.py`:
-
-1. Recursively finds every `.QIVD` file under it.
-2. For each file:
-   - Parses the binary header (instrument VISA address, column metadata).
-   - Extracts every channel that was recorded: voltage, current, resistance, power, time, and state.
-   - Writes a CSV next to the original (same base name, `.csv` extension).
-   - Writes a single-sweep PNG next to it. The plot picks whichever of voltage or current is the measured channel by checking which one is actually varying. The other channel is being sourced and held constant, and plotting it would just show ADC noise.
-3. Generates an overlay PNG in a `plots/` folder showing every sweep on one axis for quick cross-sample comparison.
-4. Logs everything to `ivex.log` in the root.
 
 ## Quick start
 
@@ -97,6 +53,50 @@ Done. 3 succeeded, 0 failed. Log: ivex.log
 ```
 
 Re-running the script regenerates everything. CSV and PNG outputs can be deleted at any time and rebuilt on the next run.
+
+## What it does
+
+Pointed at a folder, `ivex.py`:
+
+1. Recursively finds every `.QIVD` file under it.
+2. For each file:
+   - Parses the binary header (instrument VISA address, column metadata).
+   - Extracts every channel that was recorded: voltage, current, resistance, power, time, and state.
+   - Writes a CSV next to the original (same base name, `.csv` extension).
+   - Writes a single-sweep PNG next to it. The plot picks whichever of voltage or current is the measured channel by checking which one is actually varying. The other channel is being sourced and held constant, and plotting it would just show ADC noise.
+3. Generates an overlay PNG in a `plots/` folder showing every sweep on one axis for quick cross-sample comparison.
+4. Logs everything to `ivex.log` in the root.
+
+## Background
+
+The instrument this targets:
+
+- **Keysight B2900-series Precision Source/Measure Unit** (B2901, B2902, B2911, B2912 and equivalents). Writes `.QIVD` files. Controlled by *B291x Utility Software*.
+
+About the original software:
+
+- Name on disk: **QuickIV** (B291x Utility Software). Product name in version info is just "Quick IV".
+- Version verified against: **4.2.2045.2760** (installer build 2017-07-27, signed by Keysight Technologies, in-program copyright 2011-2016).
+- Architecture: 32-bit Windows **.NET / WPF** application. The two libraries that own measurement persistence are `SamplingLib.dll` (sampling mode) and `SweepLib.dll` (sweep mode). The file-format magic and the deserialization error strings live in `TestMain.dll`. Plotting inside the program is done with OxyPlot. The installer is a 76 MB InstallShield wrapper (`QuickIV-4-2-2045-2760.EXE`).
+- Hard dependency: **Keysight IO Libraries Suite** (provides the VISA drivers, in a separate ~260 MB installer). QuickIV needs it to reach the instrument.
+- Distribution: available through a Keysight support request or from another lab that already has it.
+
+Two file extensions exist:
+
+- `.qivd` is the **Quick IV Data File** (measurement results). This is what ivex converts.
+- `.qivm` is the **Quick IV Setting File** (a saved test recipe: source mode, ranges, compliance, sample count, timing). It holds settings alone, so it falls outside the scope of ivex.
+
+What `.qivm` files look like internally (from a spot-check of 13 files in the test archive):
+
+- Same magic header as `.qivd`, same overall TLV structure.
+- A fixed file size of 9364 bytes across every `.qivm` sampled. The schema is rigidly fixed: the same parameter slots are present in every file, with values written in place.
+- The tag-7 "data" records inside the column blocks have a length of zero, meaning zero captured samples.
+- Plaintext fields readable directly: VISA address and serial of the configured instrument, the test mode (`Sampling`, `Sweepd`, or `Source & Sampling`), and the channel names registered for the test.
+- The acquisition parameters themselves (source level, compliance, ranges, sample count, timing) are stored as a fixed-index parameter table, with the field names held outside the binary. The index-to-label mapping lives inside `TestMain.dll`'s deserialization code, so extracting it would mean decompiling that DLL with a .NET decompiler such as ILSpy or dnSpy. That work remains open.
+
+The `.QIVD` format is undocumented publicly. The one built-in route out is the program's "Save As CSV" command, one file at a time.
+
+This tool reverse-engineers the format and converts a whole tree of files in one pass.
 
 ## Output format
 
@@ -164,7 +164,7 @@ The standard column set written by B291x Utility is `CH1 Voltage`, `CH1 Current`
 
 Key facts:
 
-- Data is stored in **acquisition order** (low time index to high time index). No reversal is needed.
+- Data is stored in **acquisition order** (low time index to high time index), so it reads straight through.
 - All values are **little-endian IEEE-754 float64**.
 - B291x Utility's CSV export pads each file to a fixed maximum row count (typically 80,000) with empty trailing rows. The binary stores exactly the number of points captured. The `Points` field in `ivex.py`'s CSV header reflects the real captured count.
 - The `CH1 State` channel stores an instrument state register and is usually constant across a single run. It is emitted for completeness.
@@ -182,7 +182,7 @@ Within the constraints of the B2900-series + B291x Utility system the tool was b
 Things that will break it (and what the error message will say):
 
 - A different instrument or major software version with a different magic header: `unrecognized magic bytes (not a B2900 .qivd file)`.
-- A file with no recognisable `CH<N> <Name>` column records: `no column data blocks found`.
+- A file lacking recognisable `CH<N> <Name>` column records reports `no column data blocks found`.
 
 Every failure is tagged with the stage (`[parse]`, `[csv]`, `[png]`) and a human-readable reason. Unexpected exceptions also dump a Python traceback. Everything goes to both stdout and `ivex.log`.
 
@@ -208,7 +208,7 @@ your-data-folder/
     └── ...
 ```
 
-The script does not care how your folders are organised. It just walks the tree.
+The script walks whatever tree you point it at, in any folder layout.
 
 ## Customisation
 
@@ -219,13 +219,13 @@ A few knobs near the top of `ivex.py`:
 
 ## Contributing
 
-If you have `.QIVD` files from a related Keysight SMU that this tool does not handle, the fastest path to support is to drop a sample file plus the matching CSV export (from the original program) into an issue. The CSV gives the ground truth needed to verify any new format variant.
+For `.QIVD` files from a related Keysight SMU still outside its coverage, the fastest path to support is to drop a sample file plus the matching CSV export (from the original program) into an issue. The CSV gives the ground truth needed to verify any new format variant.
 
 ---
 
 ## The Story Behind This
 
-This started as a workflow frustration. Our lab's Keysight B2900-series source meter saves data in its own `.QIVD` binary format by default. The only program that reads it is B291x Utility Software ("Quick I-V"), which is not available for download anywhere online. To get a working copy you have to track down an installer through Keysight support or a colleague who already has one, then install Keysight IO Libraries Suite alongside it so the VISA drivers are present, then point the program at the instrument over USB. Plenty of friction before a single file is opened.
+This started as a workflow frustration. Our lab's Keysight B2900-series source meter saves data in its own `.QIVD` binary format by default. The one program that reads it is B291x Utility Software ("Quick I-V"), distributed privately. To get a working copy you have to track down an installer through Keysight support or a colleague who already has one, then install Keysight IO Libraries Suite alongside it so the VISA drivers are present, then point the program at the instrument over USB. Plenty of friction before a single file is opened.
 
 Even once the program runs, the export step is manual and slow. Open Quick I-V, navigate the file browser, pick one `.QIVD` file, open it, go to Save As, pick CSV, tick the column checkboxes you want, hit save. If you forget a column you go back and do the whole sequence again. Multiply by a folder of fifty measurements and an afternoon disappears.
 
@@ -244,7 +244,7 @@ The technical sequence:
 6. **Built a walker** that scans for tag-1 records starting with `CH<digit>`, then steps forward to the next tag-7 record and reads its `length/8` doubles. The first occurrence of each column name is kept, so the parser ignores the duplicate "saved-view" block that some files append.
 7. **Verified end-to-end.** Ran the parser against all 23 `.qivd` / `.csv` pairs in the lab archive. 17 of them are standard Keysight exports and matched bit-for-bit at the CSV's 5-significant-figure display precision (worst relative error 4.95e-6). The remaining 6 are user-edited 2-column derived CSVs and so were excluded from the ground-truth set.
 
-A surprise along the way: B291x Utility's CSV export pads every file to a fixed 80,000-row table, leaving most rows empty for short runs. The binary holds the actual captured count (e.g. 1720) and nothing else. Reading the binary directly gives a tighter, cleaner output without the trailing blank rows.
+A surprise along the way: B291x Utility's CSV export pads every file to a fixed 80,000-row table, leaving most rows empty for short runs. The binary holds exactly the captured count (e.g. 1720). Reading it directly gives a tighter output that ends where the data ends.
 
 ---
 
