@@ -9,11 +9,11 @@ Convert proprietary Keysight B2900-series Source/Measure Unit `.QIVD` binary fil
 
 ## The problem this solves
 
-The Keysight B2900-series SMUs save data in their own `.QIVD` binary format by default. The instrument software, **B291x Utility Software** ("Quick I-V"), offers a checkbox to also export a plain CSV file at save time. If that checkbox stays unticked, the resulting `.QIVD` files open only in that program.
+The Keysight B2900-series SMUs save data in a proprietary `.QIVD` binary format by default. The instrument software, **B291x Utility Software** ("Quick I-V"), offers a checkbox to also export a plain CSV file at save time. If that checkbox stays unticked, the resulting `.QIVD` files open only in that program.
 
-The usual workaround is to physically go back to the instrument PC, open each file one at a time in B291x Utility, and use its "Save As CSV" command. This becomes painful when the instrument PC is busy, in another room, or running an awkward Windows version.
+The usual workaround is to physically go back to the instrument PC, open each file one at a time in B291x Utility, and run the "Save As CSV" command. This becomes painful when the instrument PC is busy, in another room, or running an awkward Windows version.
 
-This script reads those binary files directly, on any PC. Point it at your own laptop, a shared drive, or an old archive of measurements and it converts the whole tree in one pass.
+This script reads those binary files directly, on any PC. Point it at a laptop, a shared drive, or an old archive of measurements and it converts the whole tree in one pass.
 
 ## Quick start
 
@@ -23,7 +23,7 @@ Requirements: Python 3.8+ and `matplotlib`.
 pip install matplotlib
 ```
 
-Drop `ivex.py` into the folder containing your data (subdirectories are walked automatically), then:
+Drop `ivex.py` into the folder containing the data (subdirectories are walked automatically), then:
 
 ```bash
 python ivex.py
@@ -94,7 +94,7 @@ What `.qivm` files look like internally (from a spot-check of 13 files in the te
 - Plaintext fields readable directly: VISA address and serial of the configured instrument, the test mode (`Sampling`, `Sweepd`, or `Source & Sampling`), and the channel names registered for the test.
 - The acquisition parameters themselves (source level, compliance, ranges, sample count, timing) are stored as a fixed-index parameter table, with the field names held outside the binary. The index-to-label mapping lives inside `TestMain.dll`'s deserialization code, so extracting it would mean decompiling that DLL with a .NET decompiler such as ILSpy or dnSpy. That work remains open.
 
-The `.QIVD` format is undocumented publicly. The one built-in route out is the program's "Save As CSV" command, one file at a time.
+The `.QIVD` format is undocumented publicly. The one built-in route out is the "Save As CSV" command in that program, one file at a time.
 
 This tool reverse-engineers the format and converts a whole tree of files in one pass.
 
@@ -116,17 +116,17 @@ voltage_V,current_A,resistance_ohm,power_W,time_s,state
 ...
 ```
 
-All six channels are emitted whenever they are present in the binary, regardless of which columns the user happened to tick in B291x Utility's CSV export dialog. The binary always stores everything.
+All six channels are emitted whenever they are present in the binary, regardless of which columns were ticked in the CSV export dialog of B291x Utility. The binary always stores everything.
 
 ## Accuracy
 
-Verified against 17 ground-truth Keysight CSV exports from real lab experiments. Worst observed relative error: **~5 × 10⁻⁶**. That is exactly the 5-significant-figure precision of Keysight's own engineering-notation CSV. The script reproduces Keysight's export bit-for-bit at display precision, and carries the full float64 precision of the underlying binary into the output.
+Verified against 17 ground-truth Keysight CSV exports from real lab experiments. Worst observed relative error: **~5 × 10⁻⁶**. That is exactly the 5-significant-figure precision of the engineering-notation CSV from Keysight. The script reproduces the Keysight export bit-for-bit at display precision, and carries the full float64 precision of the underlying binary into the output.
 
 Test coverage spans sweep lengths from 1,000 to 10,000 points and every export schema seen in the wild (5-, 6-, and 7-column exports).
 
 ## How the format works
 
-This is the part that matters if someone wants to extend the tool or write their own parser. Everything is little-endian.
+This is the part that matters for extending the tool or writing a separate parser. Everything is little-endian.
 
 ```
 offset  field                                            bytes
@@ -140,15 +140,15 @@ offset  field                                            bytes
           (length) bytes payload
 ```
 
-Inside the body, the entire file is a stream of **TLV (tag-length-value) records**. The recognised tags for our purposes:
+Inside the body, the entire file is a stream of **TLV (tag-length-value) records**. The recognised tags here:
 
 | Tag | Meaning |
 |----:|---------|
 | `1` | ASCII column name (e.g. `CH1 Voltage 1`) |
 | `4`, `5`, `6` | 4-byte uint32 metadata. Strings extracted from `TestMain.dll` name these `COMMON_REV_KEY` (format revision), `COMMON_COUNT_KEY` (record count), and an integer-vs-double type marker. |
-| `7` | The column's data array (`length / 8` little-endian float64 values when the type marker says double). |
+| `7` | The data array for the column (`length / 8` little-endian float64 values when the type marker says double). |
 
-The tag names above were cross-checked against the deserialization error messages compiled into `TestMain.dll` (`File format error (COMMON_REV_KEY)`, `File format error (COMMON_COUNT_KEY)`, `File format error (invalid integer data length)`, `File format error (invalid double data length)`). The file format also carries its own COM CLSID inside the program: `DB8CBF1C-D6D3-11D4-AA51-00A024EE30BD`.
+The tag names above were cross-checked against the deserialization error messages compiled into `TestMain.dll` (`File format error (COMMON_REV_KEY)`, `File format error (COMMON_COUNT_KEY)`, `File format error (invalid integer data length)`, `File format error (invalid double data length)`). The file format also carries a COM CLSID inside the program: `DB8CBF1C-D6D3-11D4-AA51-00A024EE30BD`.
 
 Each measurement column is laid out as:
 
@@ -160,13 +160,13 @@ tag=6  | 4        | <flag>    (data-type marker, 1 = float64)
 tag=7  | n_bytes  | <n_bytes/8 float64 samples>
 ```
 
-The standard column set written by B291x Utility is `CH1 Voltage`, `CH1 Current`, `CH1 Resistance`, `CH1 Power`, `CH1 Time`, `CH1 State`. Some files also carry a `CH1 Source` block, and most files append a duplicate of every column near the end for the program's "saved view" cache. The parser keeps the first occurrence of each name.
+The standard column set written by B291x Utility is `CH1 Voltage`, `CH1 Current`, `CH1 Resistance`, `CH1 Power`, `CH1 Time`, `CH1 State`. Some files also carry a `CH1 Source` block, and most files append a duplicate of every column near the end for the "saved view" cache in that program. The parser keeps the first occurrence of each name.
 
 Key facts:
 
 - Data is stored in **acquisition order** (low time index to high time index), so it reads straight through.
 - All values are **little-endian IEEE-754 float64**.
-- B291x Utility's CSV export pads each file to a fixed maximum row count (typically 80,000) with empty trailing rows. The binary stores exactly the number of points captured. The `Points` field in `ivex.py`'s CSV header reflects the real captured count.
+- The CSV export from B291x Utility pads each file to a fixed maximum row count (typically 80,000) with empty trailing rows. The binary stores exactly the number of points captured. The `Points` field in the CSV header written by `ivex.py` reflects the real captured count.
 - The `CH1 State` channel stores an instrument state register and is usually constant across a single run. It is emitted for completeness.
 
 ## Robustness
@@ -214,18 +214,18 @@ The script walks whatever tree you point it at, in any folder layout.
 
 A few knobs near the top of `ivex.py`:
 
-- `PLOT_COLOR`: the single-sweep plot colour. Default `#e91e63` (pink). The overlay plot uses matplotlib's default colour cycle so each trace is distinguishable.
+- `PLOT_COLOR`: the single-sweep plot colour. Default `#e91e63` (pink). The overlay plot uses the default matplotlib colour cycle so each trace is distinguishable.
 - `STANDARD_COLUMNS`: the order in which columns are written to the CSV. Any column missing from a given file is silently skipped.
 
 ## Contributing
 
-For `.QIVD` files from a related Keysight SMU still outside its coverage, the fastest path to support is to drop a sample file plus the matching CSV export (from the original program) into an issue. The CSV gives the ground truth needed to verify any new format variant.
+For `.QIVD` files from a related Keysight SMU still outside the supported set, the fastest path to support is to drop a sample file plus the matching CSV export (from the original program) into an issue. The CSV gives the ground truth needed to verify any new format variant.
 
 ---
 
 ## The Story Behind This
 
-This started as a workflow frustration. Our lab's Keysight B2900-series source meter saves data in its own `.QIVD` binary format by default. The one program that reads it is B291x Utility Software ("Quick I-V"), distributed privately. To get a working copy you have to track down an installer through Keysight support or a colleague who already has one, then install Keysight IO Libraries Suite alongside it so the VISA drivers are present, then point the program at the instrument over USB. Plenty of friction before a single file is opened.
+This started as a workflow frustration. The lab Keysight B2900-series source meter saves data in a proprietary `.QIVD` binary format by default. The one program that reads it is B291x Utility Software ("Quick I-V"), distributed privately. To get a working copy you have to track down an installer through Keysight support or a colleague who already has one, then install Keysight IO Libraries Suite alongside it so the VISA drivers are present, then point the program at the instrument over USB. Plenty of friction before a single file is opened.
 
 Even once the program runs, the export step is manual and slow. Open Quick I-V, navigate the file browser, pick one `.QIVD` file, open it, go to Save As, pick CSV, tick the column checkboxes you want, hit save. If you forget a column you go back and do the whole sequence again. Multiply by a folder of fifty measurements and an afternoon disappears.
 
@@ -233,18 +233,18 @@ The breaking point came when an old data folder needed reanalysing and the instr
 
 The technical sequence:
 
-1. **Hex-dumped a `.QIVD` file.** It opens with the ASCII magic `'B291x Utility Software Save File Header`, followed by a USB VISA resource string (`USB0::2391::52504::MY...::INSTR`). Vendor ID `2391` is Keysight's, which pinned down the instrument family on its own. After that came readable tokens like `Sampling`, `Sweepd`, `Voltage`, `CH1 Voltage`. The high-level layout was already visible.
+1. **Hex-dumped a `.QIVD` file.** It opens with the ASCII magic `'B291x Utility Software Save File Header`, followed by a USB VISA resource string (`USB0::2391::52504::MY...::INSTR`). Vendor ID `2391` belongs to Keysight, which pinned down the instrument family straight away. After that came readable tokens like `Sampling`, `Sweepd`, `Voltage`, `CH1 Voltage`. The high-level layout was already visible.
 2. **Got CSV ground truth.** One of the data folders had matching `.csv` exports from B291x Utility for two `.qivd` files. The first data row in CSV form was `V = 558.983 mV`, `I = 100 mA`, `t = 3.0 s`. That gave a definitive value to search for.
-3. **Located the first sample in the binary.** Scanning every byte offset for a float64 equal to `0.558983` produced exactly one hit at offset `0x39A`. Doing the same for `0.1` (the current) hit at `0x3AB4`, and `3.0` (the time) hit at `0xDFFC`. The gaps between hits were ~14100 bytes each, all of similar size. The file is **column-major**: each channel's full array is stored contiguously, then the next channel's full array, and so on.
-4. **Found the array length marker.** The four bytes immediately preceding each column's first sample were always `C0 35 00 00`. That decodes to `0x35C0 = 13760`, which is `1720 × 8`. The CSV had 1720 filled rows. Every column header therefore carries a `uint32` byte-count immediately before the float64 array.
+3. **Located the first sample in the binary.** Scanning every byte offset for a float64 equal to `0.558983` produced exactly one hit at offset `0x39A`. Doing the same for `0.1` (the current) hit at `0x3AB4`, and `3.0` (the time) hit at `0xDFFC`. The gaps between hits were ~14100 bytes each, all of similar size. The file is **column-major**: the full array for each channel is stored contiguously, then the next channel's full array, and so on.
+4. **Found the array length marker.** The four bytes immediately preceding the first sample of each column were always `C0 35 00 00`. That decodes to `0x35C0 = 13760`, which is `1720 × 8`. The CSV had 1720 filled rows. Every column header therefore carries a `uint32` byte-count immediately before the float64 array.
 5. **Spotted the TLV pattern.** Looking 40 bytes back from each array-length marker revealed a repeating record structure: `04 00 00 00 04 00 00 00 <4 bytes value>`, then the same with tag `05`, then `06`, then `07` (which marks the data array itself). The whole file body is a stream of TLV (tag-length-value) records:
    - tag `1` is the column name as ASCII (e.g. `CH1 Voltage 1`)
    - tags `4`, `5`, `6` are small uint32 metadata
    - tag `7` carries the float64 data array
-6. **Built a walker** that scans for tag-1 records starting with `CH<digit>`, then steps forward to the next tag-7 record and reads its `length/8` doubles. The first occurrence of each column name is kept, so the parser ignores the duplicate "saved-view" block that some files append.
-7. **Verified end-to-end.** Ran the parser against all 23 `.qivd` / `.csv` pairs in the lab archive. 17 of them are standard Keysight exports and matched bit-for-bit at the CSV's 5-significant-figure display precision (worst relative error 4.95e-6). The remaining 6 are user-edited 2-column derived CSVs and so were excluded from the ground-truth set.
+6. **Built a walker** that scans for tag-1 records starting with `CH<digit>`, then steps forward to the next tag-7 record and reads `length/8` doubles from it. The first occurrence of each column name is kept, so the parser ignores the duplicate "saved-view" block that some files append.
+7. **Verified end-to-end.** Ran the parser against all 23 `.qivd` / `.csv` pairs in the lab archive. 17 of them are standard Keysight exports and matched bit-for-bit at the 5-significant-figure display precision of the CSV (worst relative error 4.95e-6). The remaining 6 are user-edited 2-column derived CSVs and so were excluded from the ground-truth set.
 
-A surprise along the way: B291x Utility's CSV export pads every file to a fixed 80,000-row table, leaving most rows empty for short runs. The binary holds exactly the captured count (e.g. 1720). Reading it directly gives a tighter output that ends where the data ends.
+A surprise along the way: the CSV export from B291x Utility pads every file to a fixed 80,000-row table, leaving most rows empty for short runs. The binary holds exactly the captured count (e.g. 1720). Reading it directly gives a tighter output that ends where the data ends.
 
 ---
 
